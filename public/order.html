@@ -15,6 +15,8 @@
 <script>
 let products=[];
 const select=document.querySelector('#product'), price=document.querySelector('#price');
+const nameInput=document.querySelector('#name'), phoneInput=document.querySelector('#phone'), emailInput=document.querySelector('#email');
+
 fetch('/api/products').then(r=>r.json()).then(data=>{
  products=data; select.innerHTML='<option value="">Choisir une offre</option>'+data.map(p=>`<option value="${p.id}">${p.service} — ${p.plan} — ${Number(p.amount).toLocaleString('fr-FR')} F</option>`).join('');
 });
@@ -22,7 +24,8 @@ select.addEventListener('change',()=>{const p=products.find(x=>x.id===select.val
 document.querySelector('#orderForm').addEventListener('submit',async e=>{
  e.preventDefault(); document.querySelector('#msg').textContent='Envoi...';
  const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
- customer_name:name.value,customer_phone:phone.value,customer_email:email.value,product_id:product.value})});
+ customer_name:nameInput.value,customer_phone:phoneInput.value,customer_email:emailInput.value,product_id:product.value})});
+
  const d=await r.json();
  if(!r.ok){document.querySelector('#msg').textContent=d.error||'Erreur';return}
  location.href='/confirmation.html?ref='+encodeURIComponent(d.ref);
