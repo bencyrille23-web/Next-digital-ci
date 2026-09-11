@@ -1,0 +1,11 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Next Digital CI</title><link rel="stylesheet" href="/style.css"></head>
+<body><header><div class="brand">NEXT <span>DIGITAL CI</span></div><a href="/order.html" class="btn">Commander</a></header>
+<main class="hero"><div><p class="eyebrow">LE DIGITAL, SIMPLEMENT.</p><h1>Vos services numériques, <span>au même endroit.</span></h1><p>Abonnements numériques, produits digitaux et services informatiques.</p><a href="/order.html" class="btn big">Passer une commande</a></div></main>
+<section><h2>Nos offres</h2><div id="products" class="grid"></div></section>
+<footer>© Next Digital CI — Services numériques & solutions digitales</footer>
+<script>
+fetch('/api/products').then(r=>r.json()).then(ps=>{
+ const el=document.getElementById('products');
+ el.innerHTML=ps.map(p=>`<article><small>${p.category} • ${p.duration}</small><h3>${p.name}</h3><strong>${p.price.toLocaleString('fr-FR')} F CFA</strong><a class="btn" href="/order.html?product=${p.id}">Commander</a></article>`).join('');
+});
+</script></body></html>
