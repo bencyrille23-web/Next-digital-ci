@@ -1,3 +1,30 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Commander — Next Digital CI</title><link rel="stylesheet" href="/style.css"></head><body><header class="nav"><a class="brand" href="/"><span class="brand-mark">N</span><span>NEXT <b>DIGITAL CI</b></span></a><a class="nav-btn" href="/">Accueil</a></header><main class="order-page"><section class="order-layout"><div><div class="eyebrow">COMMANDE</div><h1 id="title">Votre commande</h1><p class="muted">Renseignez vos informations. Une référence unique sera créée après validation.</p><div class="order-summary" id="summary"></div></div><form id="form" class="form-card"><label>Nom complet<input name="name" required placeholder="Votre nom"></label><label>WhatsApp / Téléphone<input name="phone" required placeholder="07 XX XX XX XX"></label><label>E-mail <small>(facultatif)</small><input type="email" name="email" placeholder="vous@email.com"></label><label>Mode de paiement<select name="paymentMethod" required><option value="Wave">Wave</option><option value="Orange Money">Orange Money</option><option value="MTN Mobile Money">MTN Mobile Money</option><option value="Autre">Autre</option></select></label><label>Note <small>(facultatif)</small><textarea name="note" rows="4" placeholder="Précision pour la commande…"></textarea><button class="primary" type="submit">Valider ma commande</button><p id="msg" class="form-msg"></p></form></section></main><script>
-(async()=>{const c=await fetch('/api/config').then(r=>r.json());const id=new URLSearchParams(location.search).get('productId');const p=c.products.find(x=>x.id===id);const form=document.querySelector('#form');if(!p){document.querySelector('#title').textContent='Offre introuvable';form.remove();return;}document.querySelector('#title').textContent='Commander';document.querySelector('#summary').innerHTML=`<span>${p.category}</span><strong>${p.name}</strong><small>${p.description||p.duration||''}</small><b>${p.price.toLocaleString('fr-FR')} F CFA</b>`;form.onsubmit=async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));data.productId=p.id;const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const j=await r.json();if(!r.ok){document.querySelector('#msg').textContent=j.error||'Une erreur est survenue.';return;}location.href='/confirmation.html?ref='+encodeURIComponent(j.ref);};})();
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Commander — Next Digital CI</title><link rel="stylesheet" href="/style.css"></head>
+<body><header class="nav"><a href="/" class="brand">NEXT <span>DIGITAL CI</span></a></header>
+<main class="formwrap"><div class="panel"><h1>Passer une commande</h1><p class="muted">Choisissez votre offre puis renseignez vos coordonnées.</p>
+<form id="orderForm">
+<label>Nom complet<input id="name" required></label>
+<label>WhatsApp / téléphone<input id="phone" required placeholder="07 XX XX XX XX"></label>
+<label>Email (facultatif)<input id="email" type="email"></label>
+<label>Offre<select id="product" required><option value="">Chargement...</option></select></label>
+<div id="price" class="price"></div>
+<button class="btn primary full" type="submit">Valider la commande</button>
+<div id="msg"></div>
+</form></div></main>
+<script>
+let products=[];
+const select=document.querySelector('#product'), price=document.querySelector('#price');
+fetch('/api/products').then(r=>r.json()).then(data=>{
+ products=data; select.innerHTML='<option value="">Choisir une offre</option>'+data.map(p=>`<option value="${p.id}">${p.service} — ${p.plan} — ${Number(p.amount).toLocaleString('fr-FR')} F</option>`).join('');
+});
+select.addEventListener('change',()=>{const p=products.find(x=>x.id===select.value);price.textContent=p?Number(p.amount).toLocaleString('fr-FR')+' F CFA':''});
+document.querySelector('#orderForm').addEventListener('submit',async e=>{
+ e.preventDefault(); document.querySelector('#msg').textContent='Envoi...';
+ const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+ customer_name:name.value,customer_phone:phone.value,customer_email:email.value,product_id:product.value})});
+ const d=await r.json();
+ if(!r.ok){document.querySelector('#msg').textContent=d.error||'Erreur';return}
+ location.href='/confirmation.html?ref='+encodeURIComponent(d.ref);
+});
 </script></body></html>

@@ -1,95 +1,349 @@
-import express from "express";
-import cookieParser from "cookie-parser";
-import dotenv from "dotenv";
-import Database from "better-sqlite3";
-import jwt from "jsonwebtoken";
-import nodemailer from "nodemailer";
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+require("dotenv").config();
 
-dotenv.config();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
+const Database = require("better-sqlite3");
+const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+
 const app = express();
-const dataDir = path.join(__dirname, "data");
-fs.mkdirSync(dataDir, { recursive: true });
-const db = new Database(path.join(dataDir, "next-digital.sqlite"));
+const PORT = Number(process.env.PORT || 3000);
+const ROOT = __dirname;
+const PUBLIC = path.join(ROOT, "public");
+const DATA = path.join(ROOT, "data");
+
+fs.mkdirSync(DATA, { recursive: true });
+
+const db = new Database(path.join(DATA, "nextdigitalci.db"));
 db.pragma("journal_mode = WAL");
-app.use(express.json({ limit: "100kb" }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ref TEXT UNIQUE NOT NULL,
+  customer_name TEXT NOT NULL,
+  customer_phone TEXT NOT NULL,
+  customer_email TEXT,
+  product TEXT NOT NULL,
+  plan TEXT,
+  amount INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'En attente',
+  payment_status TEXT NOT NULL DEFAULT 'En attente',
+  account_id INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  service TEXT NOT NULL,
+  plan TEXT,
+  identifier TEXT NOT NULL,
+  secret_encrypted TEXT,
+  status TEXT NOT NULL DEFAULT 'À tester',
+  start_date TEXT,
+  expiry_date TEXT,
+  assigned_order_ref TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`);
 
 const products = [
-  {id:"netflix-public-1m",name:"Netflix — Compte public · 1 mois",price:2000,category:"Netflix",group:"Streaming",duration:"1 mois",description:"Compte public / profil"},
-  {id:"netflix-public-2m",name:"Netflix — Compte public · 2 mois",price:3000,category:"Netflix",group:"Streaming",duration:"2 mois",description:"Compte public / profil"},
-  {id:"netflix-public-3m",name:"Netflix — Compte public · 3 mois",price:5000,category:"Netflix",group:"Streaming",duration:"3 mois",description:"Compte public / profil"},
-  {id:"netflix-public-6m",name:"Netflix — Compte public · 6 mois",price:7000,category:"Netflix",group:"Streaming",duration:"6 mois",description:"Compte public / profil"},
-  {id:"netflix-public-12m",name:"Netflix — Compte public · 12 mois",price:12000,category:"Netflix",group:"Streaming",duration:"12 mois",description:"Compte public / profil"},
-  {id:"netflix-private-essential",name:"Netflix — Compte privé Essentiel",price:5500,category:"Netflix",group:"Streaming",duration:"1 mois",description:"Compte privé · forfait Essentiel"},
-  {id:"netflix-private-standard",name:"Netflix — Compte privé Standard",price:7500,category:"Netflix",group:"Streaming",duration:"1 mois",description:"Compte privé · forfait Standard"},
-  {id:"netflix-private-premium",name:"Netflix — Compte privé Premium",price:9500,category:"Netflix",group:"Streaming",duration:"1 mois",description:"Compte privé · forfait Premium"},
-  {id:"netflix-private-annual-standard",name:"Netflix — Essentiel + Standard · annuel",price:15000,category:"Netflix",group:"Streaming",duration:"1 an",description:"Compte privé annuel"},
-  {id:"netflix-private-annual-premium",name:"Netflix — Premium · annuel",price:25000,category:"Netflix",group:"Streaming",duration:"1 an",description:"Compte privé annuel"},
-  {id:"prime-public-1m",name:"Prime Video — Compte public · 1 mois",price:2000,category:"Prime Video",group:"Streaming",duration:"1 mois",description:"Compte public / profil"},
-  {id:"prime-public-2m",name:"Prime Video — Compte public · 2 mois",price:3000,category:"Prime Video",group:"Streaming",duration:"2 mois",description:"Compte public / profil"},
-  {id:"prime-public-3m",name:"Prime Video — Compte public · 3 mois",price:5000,category:"Prime Video",group:"Streaming",duration:"3 mois",description:"Compte public / profil"},
-  {id:"prime-public-6m",name:"Prime Video — Compte public · 6 mois",price:7000,category:"Prime Video",group:"Streaming",duration:"6 mois",description:"Compte public / profil"},
-  {id:"prime-public-12m",name:"Prime Video — Compte public · 12 mois",price:10000,category:"Prime Video",group:"Streaming",duration:"12 mois",description:"Compte public / profil"},
-  {id:"prime-private-standard",name:"Prime Video — Compte privé Standard",price:6500,category:"Prime Video",group:"Streaming",duration:"1 mois",description:"Compte privé · forfait Standard"},
-  {id:"prime-private-premium",name:"Prime Video — Compte privé Premium",price:8000,category:"Prime Video",group:"Streaming",duration:"1 mois",description:"Compte privé · forfait Premium"},
-  {id:"prime-private-annual-standard",name:"Prime Video — Standard · annuel",price:15000,category:"Prime Video",group:"Streaming",duration:"1 an",description:"Compte privé annuel"},
-  {id:"prime-private-annual-premium",name:"Prime Video — Premium · annuel",price:20000,category:"Prime Video",group:"Streaming",duration:"1 an",description:"Compte privé annuel"},
-  ...[["apple-music","Apple Music"],["spotify","Spotify"],["deezer","Deezer"]].flatMap(([slug,label])=>[
-    {id:`${slug}-1m`,name:`${label} · 1 mois`,price:2000,category:label,group:"Musique",duration:"1 mois"},{id:`${slug}-3m`,name:`${label} · 3 mois`,price:5000,category:label,group:"Musique",duration:"3 mois"},{id:`${slug}-6m`,name:`${label} · 6 mois`,price:8000,category:label,group:"Musique",duration:"6 mois"},{id:`${slug}-12m`,name:`${label} · 12 mois`,price:15000,category:label,group:"Musique",duration:"12 mois"},{id:`${slug}-unlimited`,name:`${label} · Illimité`,price:22000,category:label,group:"Musique",duration:"Illimité"}
-  ]),
-  ...[["chatgpt","ChatGPT",10000,27000,50000,90000],["microsoft-365","Microsoft 365",6000,17000,32000,60000],["capcut-pro","CapCut Pro",6000,17000,32000,60000],["notion","Notion",5000,14000,26000,50000],["claude-pro","Claude Pro",10000,27000,50000,90000],["claude-max","Claude Max",15000,40000,75000,135000]].flatMap(([slug,label,p1,p3,p6,p12])=>[
-    {id:`${slug}-1m`,name:`${label} · 1 mois`,price:p1,category:label,group:"Premium & Productivité",duration:"1 mois"},{id:`${slug}-3m`,name:`${label} · 3 mois`,price:p3,category:label,group:"Premium & Productivité",duration:"3 mois"},{id:`${slug}-6m`,name:`${label} · 6 mois`,price:p6,category:label,group:"Premium & Productivité",duration:"6 mois"},{id:`${slug}-12m`,name:`${label} · 12 mois`,price:p12,category:label,group:"Premium & Productivité",duration:"12 mois"}
-  ]),
-  {id:"pack-decouverte",name:"Pack Découverte — Netflix + Prime Video",price:6000,category:"Pack",group:"Packs",duration:"1 mois",description:"Netflix 1 mois public + Prime Video 1 mois public"},{id:"pack-duo",name:"Pack Duo — Netflix + Prime Video",price:12000,category:"Pack",group:"Packs",duration:"3 mois",description:"Netflix 3 mois public + Prime Video 3 mois public"},{id:"pack-family",name:"Pack Family — Netflix + Prime Video",price:18000,category:"Pack",group:"Packs",duration:"3 mois",description:"Netflix 3 mois public + Prime Video 3 mois public + 1 profil dédié"},{id:"pack-ultimate",name:"Pack Ultimate — Netflix + Prime Video",price:28000,category:"Pack",group:"Packs",duration:"6 mois",description:"Netflix 6 mois public + Prime Video 6 mois public + 1 profil dédié"},
-  {id:"pack-essential",name:"Pack Essentiel — ChatGPT + CapCut",price:25000,category:"Pack Premium",group:"Packs",duration:"3 mois",description:"ChatGPT + CapCut"},{id:"pack-essential-6",name:"Pack Essentiel — ChatGPT + CapCut",price:45000,category:"Pack Premium",group:"Packs",duration:"6 mois",description:"ChatGPT + CapCut"},{id:"pack-essential-12",name:"Pack Essentiel — ChatGPT + CapCut",price:120000,category:"Pack Premium",group:"Packs",duration:"12 mois",description:"ChatGPT + CapCut"},{id:"pack-business",name:"Pack Business — ChatGPT + Microsoft 365 + CapCut",price:55000,category:"Pack Premium",group:"Packs",duration:"3 mois",description:"ChatGPT + Microsoft 365 + CapCut"},{id:"pack-business-6",name:"Pack Business — ChatGPT + Microsoft 365 + CapCut",price:95000,category:"Pack Premium",group:"Packs",duration:"6 mois",description:"ChatGPT + Microsoft 365 + CapCut"},{id:"pack-business-12",name:"Pack Business — ChatGPT + Microsoft 365 + CapCut",price:180000,category:"Pack Premium",group:"Packs",duration:"12 mois",description:"ChatGPT + Microsoft 365 + CapCut"},{id:"pack-premium",name:"Pack Premium — Tous les outils",price:75000,category:"Pack Premium",group:"Packs",duration:"3 mois",description:"Tous les outils inclus"},{id:"pack-premium-6",name:"Pack Premium — Tous les outils",price:140000,category:"Pack Premium",group:"Packs",duration:"6 mois",description:"Tous les outils inclus"},{id:"pack-premium-12",name:"Pack Premium — Tous les outils",price:260000,category:"Pack Premium",group:"Packs",duration:"12 mois",description:"Tous les outils inclus"}
+  {id:"netflix-public-1m", service:"Netflix", plan:"Public — 1 mois", amount:2000},
+  {id:"netflix-public-2m", service:"Netflix", plan:"Public — 2 mois", amount:3000},
+  {id:"netflix-public-3m", service:"Netflix", plan:"Public — 3 mois", amount:5000},
+  {id:"netflix-public-6m", service:"Netflix", plan:"Public — 6 mois", amount:7000},
+  {id:"netflix-public-12m", service:"Netflix", plan:"Public — 12 mois", amount:12000},
+  {id:"netflix-private-essential-m", service:"Netflix", plan:"Privé Essentiel — 1 mois", amount:5500},
+  {id:"netflix-private-standard-m", service:"Netflix", plan:"Privé Standard — 1 mois", amount:7500},
+  {id:"netflix-private-premium-m", service:"Netflix", plan:"Privé Premium — 1 mois", amount:9500},
+  {id:"netflix-private-es-standard-y", service:"Netflix", plan:"Privé Essentiel + Standard — 1 an", amount:15000},
+  {id:"netflix-private-premium-y", service:"Netflix", plan:"Privé Premium — 1 an", amount:25000},
+
+  {id:"prime-public-1m", service:"Prime Video", plan:"Public — 1 mois", amount:2000},
+  {id:"prime-public-2m", service:"Prime Video", plan:"Public — 2 mois", amount:3000},
+  {id:"prime-public-3m", service:"Prime Video", plan:"Public — 3 mois", amount:5000},
+  {id:"prime-public-6m", service:"Prime Video", plan:"Public — 6 mois", amount:7000},
+  {id:"prime-public-12m", service:"Prime Video", plan:"Public — 12 mois", amount:10000},
+  {id:"prime-private-standard-m", service:"Prime Video", plan:"Privé Standard — 1 mois", amount:6500},
+  {id:"prime-private-premium-m", service:"Prime Video", plan:"Privé Premium — 1 mois", amount:8000},
+  {id:"prime-private-standard-y", service:"Prime Video", plan:"Privé Standard — 1 an", amount:15000},
+  {id:"prime-private-premium-y", service:"Prime Video", plan:"Privé Premium — 1 an", amount:20000},
+
+  {id:"spotify-1m", service:"Spotify", plan:"1 mois", amount:2000},
+  {id:"spotify-3m", service:"Spotify", plan:"3 mois", amount:5000},
+  {id:"spotify-6m", service:"Spotify", plan:"6 mois", amount:8000},
+  {id:"spotify-12m", service:"Spotify", plan:"12 mois", amount:15000},
+  {id:"spotify-unlimited", service:"Spotify", plan:"Illimité", amount:22000},
+
+  {id:"applemusic-1m", service:"Apple Music", plan:"1 mois", amount:2000},
+  {id:"applemusic-3m", service:"Apple Music", plan:"3 mois", amount:5000},
+  {id:"applemusic-6m", service:"Apple Music", plan:"6 mois", amount:8000},
+  {id:"applemusic-12m", service:"Apple Music", plan:"12 mois", amount:15000},
+  {id:"applemusic-unlimited", service:"Apple Music", plan:"Illimité", amount:22000},
+
+  {id:"deezer-1m", service:"Deezer", plan:"1 mois", amount:2000},
+  {id:"deezer-3m", service:"Deezer", plan:"3 mois", amount:5000},
+  {id:"deezer-6m", service:"Deezer", plan:"6 mois", amount:8000},
+  {id:"deezer-12m", service:"Deezer", plan:"12 mois", amount:15000},
+  {id:"deezer-unlimited", service:"Deezer", plan:"Illimité", amount:22000},
+
+  {id:"chatgpt-1m", service:"ChatGPT", plan:"1 mois", amount:10000},
+  {id:"chatgpt-3m", service:"ChatGPT", plan:"3 mois", amount:27000},
+  {id:"chatgpt-6m", service:"ChatGPT", plan:"6 mois", amount:50000},
+  {id:"chatgpt-12m", service:"ChatGPT", plan:"12 mois", amount:90000},
+
+  {id:"m365-1m", service:"Microsoft 365", plan:"1 mois", amount:6000},
+  {id:"m365-3m", service:"Microsoft 365", plan:"3 mois", amount:17000},
+  {id:"m365-6m", service:"Microsoft 365", plan:"6 mois", amount:32000},
+  {id:"m365-12m", service:"Microsoft 365", plan:"12 mois", amount:60000},
+
+  {id:"capcut-1m", service:"CapCut Pro", plan:"1 mois", amount:6000},
+  {id:"capcut-3m", service:"CapCut Pro", plan:"3 mois", amount:17000},
+  {id:"capcut-6m", service:"CapCut Pro", plan:"6 mois", amount:32000},
+  {id:"capcut-12m", service:"CapCut Pro", plan:"12 mois", amount:60000},
+
+  {id:"notion-1m", service:"Notion", plan:"1 mois", amount:5000},
+  {id:"notion-3m", service:"Notion", plan:"3 mois", amount:14000},
+  {id:"notion-6m", service:"Notion", plan:"6 mois", amount:26000},
+  {id:"notion-12m", service:"Notion", plan:"12 mois", amount:50000},
+
+  {id:"claude-pro-1m", service:"Claude Pro", plan:"1 mois", amount:10000},
+  {id:"claude-pro-3m", service:"Claude Pro", plan:"3 mois", amount:27000},
+  {id:"claude-pro-6m", service:"Claude Pro", plan:"6 mois", amount:50000},
+  {id:"claude-pro-12m", service:"Claude Pro", plan:"12 mois", amount:90000},
+
+  {id:"claude-max-1m", service:"Claude Max", plan:"1 mois", amount:15000},
+  {id:"claude-max-3m", service:"Claude Max", plan:"3 mois", amount:40000},
+  {id:"claude-max-6m", service:"Claude Max", plan:"6 mois", amount:75000},
+  {id:"claude-max-12m", service:"Claude Max", plan:"12 mois", amount:135000},
+
+  {id:"pack-decouverte", service:"Pack Découverte", plan:"Netflix 1 mois + Prime 1 mois", amount:6000},
+  {id:"pack-duo", service:"Pack Duo", plan:"Netflix 3 mois + Prime 3 mois", amount:12000},
+  {id:"pack-family", service:"Pack Family", plan:"Netflix 3 mois + Prime 3 mois + profil dédié", amount:18000},
+  {id:"pack-ultimate", service:"Pack Ultimate", plan:"Netflix 6 mois + Prime 6 mois + profil dédié", amount:28000},
+
+  {id:"pack-essentiel-3m", service:"Pack Essentiel", plan:"ChatGPT + CapCut — 3 mois", amount:25000},
+  {id:"pack-essentiel-6m", service:"Pack Essentiel", plan:"ChatGPT + CapCut — 6 mois", amount:45000},
+  {id:"pack-essentiel-12m", service:"Pack Essentiel", plan:"ChatGPT + CapCut — 12 mois", amount:120000},
+  {id:"pack-business-3m", service:"Pack Business", plan:"ChatGPT + Microsoft 365 + CapCut — 3 mois", amount:55000},
+  {id:"pack-business-6m", service:"Pack Business", plan:"ChatGPT + Microsoft 365 + CapCut — 6 mois", amount:95000},
+  {id:"pack-business-12m", service:"Pack Business", plan:"ChatGPT + Microsoft 365 + CapCut — 12 mois", amount:180000},
+  {id:"pack-premium-3m", service:"Pack Premium", plan:"Tous les outils — 3 mois", amount:75000},
+  {id:"pack-premium-6m", service:"Pack Premium", plan:"Tous les outils — 6 mois", amount:140000},
+  {id:"pack-premium-12m", service:"Pack Premium", plan:"Tous les outils — 12 mois", amount:260000}
 ];
 
-// Migrations: keeps existing SQLite data if an older version is deployed.
-db.exec(`CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT UNIQUE, customer_name TEXT, customer_phone TEXT, customer_email TEXT, product TEXT, amount INTEGER, quantity INTEGER DEFAULT 1, payment_method TEXT, status TEXT DEFAULT 'En attente', note TEXT, created_at TEXT)`);
-const cols = db.prepare("PRAGMA table_info(orders)").all().map(x=>x.name);
-const addCol=(t,n,type)=>{if(!cols.includes(n)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${n} ${type}`)};
-addCol('orders','payment_status',"TEXT DEFAULT 'À vérifier'"); addCol('orders','delivery_status',"TEXT DEFAULT 'À livrer'"); addCol('orders','assigned_account_id','INTEGER'); addCol('orders','paid_at','TEXT'); addCol('orders','delivered_at','TEXT'); addCol('orders','delivery_note','TEXT');
-db.exec(`CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, service TEXT NOT NULL, plan TEXT NOT NULL, identifier TEXT NOT NULL, secret_enc TEXT NOT NULL, status TEXT DEFAULT 'À tester', starts_at TEXT, expires_at TEXT, assigned_order_ref TEXT, notes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+const encKey = crypto.createHash("sha256")
+  .update(String(process.env.CREDENTIAL_ENCRYPTION_KEY || "CHANGE_ME_ENCRYPTION_KEY"))
+  .digest();
 
-function enc(text){
-  const key=process.env.CREDENTIAL_ENCRYPTION_KEY;
-  if(!key) throw new Error('CREDENTIAL_ENCRYPTION_KEY manquante');
-  const k=crypto.createHash('sha256').update(key).digest(); const iv=crypto.randomBytes(12); const c=crypto.createCipheriv('aes-256-gcm',k,iv); const data=Buffer.concat([c.update(String(text),'utf8'),c.final()]); return `${iv.toString('base64')}.${c.getAuthTag().toString('base64')}.${data.toString('base64')}`;
+function encrypt(text) {
+  if (!text) return null;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encKey, iv);
+  const encrypted = Buffer.concat([cipher.update(String(text), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [iv, tag, encrypted].map(b => b.toString("base64")).join(".");
 }
-function dec(payload){const key=process.env.CREDENTIAL_ENCRYPTION_KEY;if(!key) throw new Error('CREDENTIAL_ENCRYPTION_KEY manquante');const [ivB,tagB,dataB]=payload.split('.');const k=crypto.createHash('sha256').update(key).digest();const d=crypto.createDecipheriv('aes-256-gcm',k,Buffer.from(ivB,'base64'));d.setAuthTag(Buffer.from(tagB,'base64'));return Buffer.concat([d.update(Buffer.from(dataB,'base64')),d.final()]).toString('utf8')}
-function makeRef(){return 'NDC-'+Date.now().toString(36).toUpperCase()+'-'+crypto.randomBytes(2).toString('hex').toUpperCase()}
-function auth(req,res,next){try{const token=req.cookies.ndc_admin;if(!token)throw 0;req.admin=jwt.verify(token,process.env.JWT_SECRET);next()}catch{res.status(401).json({error:'Non autorisé'})}}
-function updateExpired(){db.prepare("UPDATE accounts SET status='Expiré',updated_at=? WHERE expires_at IS NOT NULL AND expires_at<=? AND status NOT IN ('Expiré','Désactivé')").run(new Date().toISOString(),new Date().toISOString())}
-function accountView(a,includeSecret=false){let secret=''; if(includeSecret){try{secret=dec(a.secret_enc)}catch{secret=''}} const expires=a.expires_at?new Date(a.expires_at):null; const days=expires?Math.ceil((expires-Date.now())/86400000):null; return {id:a.id,service:a.service,plan:a.plan,identifier:a.identifier,secret, status:a.status,starts_at:a.starts_at,expires_at:a.expires_at,days_left:days,assigned_order_ref:a.assigned_order_ref,notes:a.notes,created_at:a.created_at}}
+function decrypt(value) {
+  if (!value) return "";
+  const [ivB, tagB, dataB] = value.split(".");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", encKey, Buffer.from(ivB,"base64"));
+  decipher.setAuthTag(Buffer.from(tagB,"base64"));
+  return Buffer.concat([decipher.update(Buffer.from(dataB,"base64")), decipher.final()]).toString("utf8");
+}
 
-app.get('/api/config',(_req,res)=>res.json({whatsapp:process.env.WHATSAPP_NUMBER||'',siteUrl:process.env.SITE_URL||'',products}));
-app.get('/api/orders/:ref',(req,res)=>{const row=db.prepare('SELECT ref,customer_name,customer_phone,customer_email,product,amount,quantity,payment_method,status,payment_status,delivery_status,created_at,paid_at,delivered_at FROM orders WHERE ref=?').get(req.params.ref);if(!row)return res.status(404).json({error:'Commande introuvable'});res.json(row)});
+function now() { return new Date().toISOString(); }
+function makeRef() {
+  return "NDC-" + Date.now().toString(36).toUpperCase() + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
+}
+function adminAuth(req,res,next) {
+  try {
+    const token = req.cookies.ndc_admin;
+    if (!token) return res.status(401).json({error:"Non autorisé"});
+    jwt.verify(token, process.env.JWT_SECRET || "CHANGE_ME_SECRET");
+    next();
+  } catch {
+    res.status(401).json({error:"Session expirée"});
+  }
+}
+function normalizeWhatsApp(phone) {
+  let p = String(phone || "").replace(/\D/g,"");
+  if (p.startsWith("0")) p = "225" + p.slice(1);
+  if (!p.startsWith("225") && p.length <= 10) p = "225" + p;
+  return p;
+}
 
-app.post('/api/orders',async(req,res)=>{const {name,phone,email,productId,paymentMethod,note}=req.body||{};const product=products.find(p=>p.id===productId);if(!name?.trim()||!phone?.trim()||!product||!paymentMethod)return res.status(400).json({error:'Informations de commande incomplètes.'});const ref=makeRef(),createdAt=new Date().toISOString();db.prepare(`INSERT INTO orders(ref,customer_name,customer_phone,customer_email,product,amount,quantity,payment_method,status,note,created_at,payment_status,delivery_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(ref,name.trim(),phone.trim(),email?.trim()||'',product.name,product.price,1,paymentMethod,'En attente',note?.trim()||'',createdAt,'À vérifier','À livrer');
-  if(email?.trim()&&process.env.SMTP_HOST){try{const transporter=nodemailer.createTransport({host:process.env.SMTP_HOST,port:Number(process.env.SMTP_PORT||587),secure:Number(process.env.SMTP_PORT)===465,auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}});await transporter.sendMail({from:process.env.SMTP_FROM,to:email.trim(),subject:`Commande ${ref} — Next Digital CI`,text:`Bonjour ${name},\n\nVotre commande ${ref} a bien été enregistrée.\nProduit : ${product.name}\nMontant : ${product.price.toLocaleString('fr-FR')} F CFA\nPaiement : ${paymentMethod}\nStatut : Paiement à vérifier.\n\nNext Digital CI`})}catch(e){console.error('Email error:',e.message)}}
-  res.status(201).json({ref,product:product.name,amount:product.price,status:'En attente'});
+app.use(express.json({limit:"1mb"}));
+app.use(cookieParser());
+
+// Health check — useful for Railway
+app.get("/health", (req,res) => res.json({ok:true, service:"Next Digital CI"}));
+
+// API
+app.get("/api/products", (req,res) => res.json(products));
+
+app.post("/api/orders", async (req,res) => {
+  try {
+    const {customer_name, customer_phone, customer_email, product_id} = req.body || {};
+    const product = products.find(p => p.id === product_id);
+    if (!customer_name || !customer_phone || !product) {
+      return res.status(400).json({error:"Informations de commande incomplètes"});
+    }
+    let ref = makeRef();
+    const created = now();
+    db.prepare(`INSERT INTO orders
+      (ref,customer_name,customer_phone,customer_email,product,plan,amount,status,payment_status,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,'En attente','En attente',?,?)`)
+      .run(ref, customer_name.trim(), customer_phone.trim(), customer_email || "",
+            product.service, product.plan, product.amount, created, created);
+
+    res.json({ok:true, ref, amount:product.amount, product});
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({error:"Impossible de créer la commande"});
+  }
 });
 
-app.post('/api/admin/login',(req,res)=>{const {email,password}=req.body||{};if(!process.env.ADMIN_EMAIL||!process.env.ADMIN_PASSWORD||!process.env.JWT_SECRET)return res.status(500).json({error:'Configuration admin incomplète.'});if(email!==process.env.ADMIN_EMAIL||password!==process.env.ADMIN_PASSWORD)return res.status(401).json({error:'Identifiants incorrects.'});const token=jwt.sign({email},process.env.JWT_SECRET,{expiresIn:'8h'});res.cookie('ndc_admin',token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:8*60*60*1000});res.json({ok:true})});
-app.post('/api/admin/logout',(_req,res)=>{res.clearCookie('ndc_admin');res.json({ok:true})});
-app.get('/api/admin/me',auth,(req,res)=>res.json({email:req.admin.email}));
-app.get('/api/admin/orders',auth,(req,res)=>{const rows=db.prepare('SELECT * FROM orders ORDER BY id DESC').all();updateExpired();res.json(rows)});
-app.get('/api/admin/accounts',auth,(req,res)=>{updateExpired();const rows=db.prepare('SELECT * FROM accounts ORDER BY id DESC').all().map(a=>accountView(a,false));res.json(rows)});
-app.post('/api/admin/accounts',auth,(req,res)=>{try{const {service,plan,identifier,secret,status='À tester',startsAt,expiresAt,notes}=req.body||{};if(!service?.trim()||!plan?.trim()||!identifier?.trim()||!secret) return res.status(400).json({error:'Service, offre, identifiant et secret sont obligatoires.'});const now=new Date().toISOString();const r=db.prepare('INSERT INTO accounts(service,plan,identifier,secret_enc,status,starts_at,expires_at,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(service.trim(),plan.trim(),identifier.trim(),enc(secret),status,startsAt||null,expiresAt||null,notes?.trim()||'',now,now);res.status(201).json(accountView(db.prepare('SELECT * FROM accounts WHERE id=?').get(r.lastInsertRowid),false))}catch(e){res.status(500).json({error:e.message})}});
-app.patch('/api/admin/accounts/:id',auth,(req,res)=>{try{const a=db.prepare('SELECT * FROM accounts WHERE id=?').get(req.params.id);if(!a)return res.status(404).json({error:'Compte introuvable'});const allowed=['À tester','Fonctionnel','Problème','Disponible','Désactivé'];const {status,startsAt,expiresAt,notes,secret,identifier,plan,service}=req.body||{};if(status&&!allowed.includes(status))return res.status(400).json({error:'Statut invalide'});const now=new Date().toISOString();db.prepare(`UPDATE accounts SET service=?,plan=?,identifier=?,secret_enc=?,status=?,starts_at=?,expires_at=?,notes=?,updated_at=? WHERE id=?`).run(service??a.service,plan??a.plan,identifier??a.identifier,secret?enc(secret):a.secret_enc,status??a.status,startsAt??a.starts_at,expiresAt??a.expires_at,notes??a.notes,now,a.id);res.json(accountView(db.prepare('SELECT * FROM accounts WHERE id=?').get(a.id),false))}catch(e){res.status(500).json({error:e.message})}});
-app.get('/api/admin/accounts/:id/credentials',auth,(req,res)=>{const a=db.prepare('SELECT * FROM accounts WHERE id=?').get(req.params.id);if(!a)return res.status(404).json({error:'Compte introuvable'});res.json(accountView(a,true))});
-app.post('/api/admin/orders/:ref/confirm-payment',auth,(req,res)=>{const now=new Date().toISOString();const r=db.prepare("UPDATE orders SET payment_status='Payé',status='Confirmée',paid_at=? WHERE ref=?").run(now,req.params.ref);if(!r.changes)return res.status(404).json({error:'Commande introuvable'});res.json({ok:true})});
-app.post('/api/admin/orders/:ref/reject-payment',auth,(req,res)=>{const r=db.prepare("UPDATE orders SET payment_status='Refusé',status='Annulée' WHERE ref=?").run(req.params.ref);if(!r.changes)return res.status(404).json({error:'Commande introuvable'});res.json({ok:true})});
-app.get('/api/admin/orders/:ref/available-accounts',auth,(req,res)=>{updateExpired();const o=db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);if(!o)return res.status(404).json({error:'Commande introuvable'});const rows=db.prepare("SELECT * FROM accounts WHERE status IN ('Fonctionnel','Disponible') AND assigned_order_ref IS NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC").all(new Date().toISOString()).map(a=>accountView(a,false));res.json(rows)});
-app.post('/api/admin/orders/:ref/assign-account',auth,(req,res)=>{try{const o=db.prepare('SELECT * FROM orders WHERE ref=?').get(req.params.ref);if(!o)return res.status(404).json({error:'Commande introuvable'});if(o.payment_status!=='Payé')return res.status(400).json({error:'Le paiement doit être confirmé avant attribution.'});const a=db.prepare("SELECT * FROM accounts WHERE id=? AND status IN ('Fonctionnel','Disponible') AND assigned_order_ref IS NULL").get(req.body?.accountId);if(!a)return res.status(400).json({error:'Compte indisponible.'});const tx=db.transaction(()=>{db.prepare("UPDATE accounts SET assigned_order_ref=?,status='Disponible',updated_at=? WHERE id=?").run(o.ref,new Date().toISOString(),a.id);db.prepare("UPDATE orders SET assigned_account_id=?,delivery_status='À livrer' WHERE ref=?").run(a.id,o.ref)});tx();res.json({ok:true,account:accountView(db.prepare('SELECT * FROM accounts WHERE id=?').get(a.id),true)})}catch(e){res.status(500).json({error:e.message})}});
-app.post('/api/admin/orders/:ref/delivered',auth,(req,res)=>{const now=new Date().toISOString();const r=db.prepare("UPDATE orders SET status='Livrée',delivery_status='Livrée',delivered_at=?,delivery_note=? WHERE ref=?").run(now,req.body?.note||'',req.params.ref);if(!r.changes)return res.status(404).json({error:'Commande introuvable'});res.json({ok:true})});
-app.get('/api/admin/stats',auth,(req,res)=>{updateExpired();const orders=db.prepare('SELECT * FROM orders').all();const accounts=db.prepare('SELECT * FROM accounts').all();res.json({orders:orders.length,pending:orders.filter(x=>x.payment_status!=='Payé'&&x.status!=='Annulée').length,toDeliver:orders.filter(x=>x.payment_status==='Payé'&&x.delivery_status!=='Livrée').length,delivered:orders.filter(x=>x.status==='Livrée').length,revenue:orders.filter(x=>x.payment_status==='Payé').reduce((s,x)=>s+x.amount,0),stock:accounts.filter(x=>['Fonctionnel','Disponible'].includes(x.status)&&!x.assigned_order_ref).length,expiring:accounts.filter(x=>x.expires_at&&new Date(x.expires_at)>new Date()&&new Date(x.expires_at)<=new Date(Date.now()+7*86400000)).length})});
+app.get("/api/orders/:ref", (req,res) => {
+  const row = db.prepare("SELECT ref,customer_name,product,plan,amount,status,payment_status,created_at,updated_at FROM orders WHERE ref=?").get(req.params.ref);
+  if (!row) return res.status(404).json({error:"Commande introuvable"});
+  res.json(row);
+});
 
-app.get('*',(_req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
-const port=Number(process.env.PORT||3000);app.listen(port,()=>console.log(`Next Digital CI running on port ${port}`));
+app.post("/api/admin/login", (req,res) => {
+  const email = String(req.body?.email || "");
+  const password = String(req.body?.password || "");
+  if (email !== String(process.env.ADMIN_EMAIL || "") || password !== String(process.env.ADMIN_PASSWORD || "")) {
+    return res.status(401).json({error:"Identifiants incorrects"});
+  }
+  const token = jwt.sign({email}, process.env.JWT_SECRET || "CHANGE_ME_SECRET", {expiresIn:"7d"});
+  res.cookie("ndc_admin", token, {httpOnly:true, sameSite:"lax", secure:process.env.NODE_ENV==="production", maxAge:7*24*3600*1000});
+  res.json({ok:true});
+});
+app.post("/api/admin/logout", (req,res) => {
+  res.clearCookie("ndc_admin");
+  res.json({ok:true});
+});
+app.get("/api/admin/me", adminAuth, (req,res) => res.json({ok:true}));
+
+app.get("/api/admin/orders", adminAuth, (req,res) => {
+  const rows = db.prepare(`
+    SELECT o.*, a.identifier AS account_identifier
+    FROM orders o LEFT JOIN accounts a ON a.id=o.account_id
+    ORDER BY o.id DESC
+  `).all();
+  res.json(rows);
+});
+
+app.patch("/api/admin/orders/:ref/payment", adminAuth, (req,res) => {
+  const action = req.body?.action;
+  const payment = action === "confirm" ? "Payé" : action === "reject" ? "Refusé" : null;
+  if (!payment) return res.status(400).json({error:"Action invalide"});
+  const status = action === "confirm" ? "Payé — À livrer" : "Annulée";
+  const result = db.prepare("UPDATE orders SET payment_status=?, status=?, updated_at=? WHERE ref=?")
+    .run(payment,status,now(),req.params.ref);
+  if (!result.changes) return res.status(404).json({error:"Commande introuvable"});
+  res.json({ok:true});
+});
+
+app.get("/api/admin/accounts", adminAuth, (req,res) => {
+  const rows = db.prepare("SELECT id,service,plan,identifier,status,start_date,expiry_date,assigned_order_ref,notes,created_at,updated_at FROM accounts ORDER BY id DESC").all();
+  res.json(rows);
+});
+
+app.post("/api/admin/accounts", adminAuth, (req,res) => {
+  const {service,plan,identifier,secret,status,start_date,expiry_date,notes} = req.body || {};
+  if (!service || !identifier) return res.status(400).json({error:"Service et identifiant obligatoires"});
+  const t=now();
+  const result=db.prepare(`INSERT INTO accounts
+    (service,plan,identifier,secret_encrypted,status,start_date,expiry_date,notes,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(service,plan||"",identifier,encrypt(secret||""),status||"À tester",start_date||null,expiry_date||null,notes||"",t,t);
+  res.json({ok:true,id:result.lastInsertRowid});
+});
+
+app.patch("/api/admin/accounts/:id", adminAuth, (req,res) => {
+  const old=db.prepare("SELECT * FROM accounts WHERE id=?").get(req.params.id);
+  if(!old) return res.status(404).json({error:"Compte introuvable"});
+  const b=req.body||{};
+  db.prepare(`UPDATE accounts SET service=?,plan=?,identifier=?,secret_encrypted=?,status=?,start_date=?,expiry_date=?,notes=?,updated_at=? WHERE id=?`)
+    .run(b.service??old.service,b.plan??old.plan,b.identifier??old.identifier,
+      b.secret!==undefined?encrypt(b.secret):old.secret_encrypted,b.status??old.status,
+      b.start_date??old.start_date,b.expiry_date??old.expiry_date,b.notes??old.notes,now(),old.id);
+  res.json({ok:true});
+});
+
+app.get("/api/admin/available-accounts", adminAuth, (req,res) => {
+  const rows=db.prepare(`SELECT id,service,plan,identifier,status,start_date,expiry_date
+    FROM accounts WHERE status='Disponible' AND assigned_order_ref IS NULL
+    ORDER BY id ASC`).all();
+  res.json(rows);
+});
+
+app.post("/api/admin/orders/:ref/assign", adminAuth, (req,res) => {
+  const order=db.prepare("SELECT * FROM orders WHERE ref=?").get(req.params.ref);
+  if(!order) return res.status(404).json({error:"Commande introuvable"});
+  if(order.payment_status!=="Payé") return res.status(400).json({error:"Paiement non confirmé"});
+  const account=db.prepare("SELECT * FROM accounts WHERE id=?").get(req.body?.account_id);
+  if(!account || account.status!=="Disponible" || account.assigned_order_ref) return res.status(400).json({error:"Compte indisponible"});
+  const t=now();
+  const tx=db.transaction(()=>{
+    db.prepare("UPDATE orders SET account_id=?, status=?, updated_at=? WHERE ref=?")
+      .run(account.id,"Payé — À livrer",t,order.ref);
+    db.prepare("UPDATE accounts SET assigned_order_ref=?, updated_at=? WHERE id=?")
+      .run(order.ref,t,account.id);
+  });
+  tx();
+  res.json({ok:true});
+});
+
+app.get("/api/admin/orders/:ref/delivery", adminAuth, (req,res) => {
+  const row=db.prepare(`SELECT o.*,a.service AS account_service,a.plan AS account_plan,a.identifier,a.secret_encrypted
+    FROM orders o LEFT JOIN accounts a ON a.id=o.account_id WHERE o.ref=?`).get(req.params.ref);
+  if(!row) return res.status(404).json({error:"Commande introuvable"});
+  const secret=decrypt(row.secret_encrypted);
+  const msg=`Bonjour ${row.customer_name},\n\nVotre commande Next Digital CI (${row.ref}) est prête.\nService : ${row.account_service || row.product}\nOffre : ${row.account_plan || row.plan || ""}\nIdentifiant : ${row.identifier || ""}\nMot de passe : ${secret}\n\nMerci pour votre confiance.\nNext Digital CI — Le digital, simplement.`;
+  const wa="https://wa.me/"+normalizeWhatsApp(row.customer_phone)+"?text="+encodeURIComponent(msg);
+  res.json({ok:true,identifier:row.identifier||"",secret,whatsapp:wa});
+});
+
+app.post("/api/admin/orders/:ref/delivered", adminAuth, (req,res) => {
+  const order=db.prepare("SELECT * FROM orders WHERE ref=?").get(req.params.ref);
+  if(!order) return res.status(404).json({error:"Commande introuvable"});
+  db.prepare("UPDATE orders SET status='Livrée',updated_at=? WHERE ref=?").run(now(),order.ref);
+  res.json({ok:true});
+});
+
+app.get("/api/admin/stats", adminAuth, (req,res) => {
+  const orders=db.prepare("SELECT COUNT(*) c FROM orders").get().c;
+  const pending=db.prepare("SELECT COUNT(*) c FROM orders WHERE status='En attente'").get().c;
+  const revenue=db.prepare("SELECT COALESCE(SUM(amount),0) s FROM orders WHERE payment_status='Payé'").get().s;
+  const available=db.prepare("SELECT COUNT(*) c FROM accounts WHERE status='Disponible' AND assigned_order_ref IS NULL").get().c;
+  res.json({orders,pending,revenue,available});
+});
+
+// IMPORTANT: static is mounted AFTER API routes and explicitly serves index.html.
+// This fixes Railway "Not Found" when the server is healthy.
+app.use(express.static(PUBLIC, {index:false}));
+
+app.get("/", (req,res) => res.sendFile(path.join(PUBLIC,"index.html")));
+app.get("/index.html", (req,res) => res.sendFile(path.join(PUBLIC,"index.html")));
+app.get("/order", (req,res) => res.sendFile(path.join(PUBLIC,"order.html")));
+app.get("/order.html", (req,res) => res.sendFile(path.join(PUBLIC,"order.html")));
+app.get("/confirmation", (req,res) => res.sendFile(path.join(PUBLIC,"confirmation.html")));
+app.get("/confirmation.html", (req,res) => res.sendFile(path.join(PUBLIC,"confirmation.html")));
+app.get("/admin", (req,res) => res.sendFile(path.join(PUBLIC,"admin.html")));
+app.get("/admin.html", (req,res) => res.sendFile(path.join(PUBLIC,"admin.html")));
+
+app.use((req,res) => res.status(404).send("Not Found"));
+
+app.listen(PORT,"0.0.0.0",()=> {
+  console.log(`Next Digital CI running on port ${PORT}`);
+});
