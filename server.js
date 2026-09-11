@@ -194,8 +194,13 @@ app.post("/api/orders", async (req,res) => {
     const {customer_name, customer_phone, customer_email, product_id} = req.body || {};
     const product = products.find(p => p.id === product_id);
     if (!customer_name || !customer_phone || !product) {
-      return res.status(400).json({error:"Informations de commande incomplètes"});
+      const missing = [];
+      if (!customer_name) missing.push("nom");
+      if (!customer_phone) missing.push("téléphone");
+      if (!product) missing.push(`offre invalide (id reçu: "${product_id}")`);
+      return res.status(400).json({error:"Manquant: " + missing.join(", ")});
     }
+
     let ref = makeRef();
     const created = now();
     db.prepare(`INSERT INTO orders
