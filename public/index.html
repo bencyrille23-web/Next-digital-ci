@@ -55,7 +55,11 @@ function groupKey(p){
   if(['Spotify','Apple Music','Deezer'].includes(p.service))return 'Musique';
   return 'Productivité';
 }
-function render(){
+function render(){                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+  function iconSlug(s){
+  const map={'Netflix':'netflix','Spotify':'spotify','Apple Music':'applemusic','Deezer':'deezer','Prime Video':'primevideo','ChatGPT':'openai','Microsoft 365':'microsoft365','CapCut Pro':'capcut','Notion':'notion'};
+  return map[s]||null;
+}
   const q=document.querySelector('#search').value.toLowerCase();
   const active=document.querySelector('.filter.active')?.dataset.g||'Tous';
   const items=products.filter(p=>(active==='Tous'||groupKey(p)===active)&&(p.service+' '+p.plan).toLowerCase().includes(q));
@@ -63,7 +67,7 @@ function render(){
   document.querySelector('#catalogue-list').innerHTML = services.length ? services.map(s=>{
     const rows=items.filter(p=>p.service===s);
     return `<div class="catalog-group">
-      <div class="catalog-title"><b>${s}</b><span>${rows.length} offre(s)</span></div>
+           <div class="catalog-title">${iconSlug(s)?`<img class="svc-icon" src="https://cdn.simpleicons.org/${iconSlug(s)}" onerror="this.outerHTML='<span class=&quot;svc-fallback&quot;>${s[0]}</span>'">`:`<span class="svc-fallback">${s[0]}</span>`}<b>${s}</b><span>${rows.length} offre(s)</span></div>
       <div class="product-grid">${rows.map(p=>`
         <div class="product">
           <div class="plan">${p.plan}</div>
