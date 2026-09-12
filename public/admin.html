@@ -1,15 +1,181 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Administration — Next Digital CI</title><link rel="stylesheet" href="/style.css"></head>
-<body><header class="nav"><a href="/" class="brand">NEXT <span>DIGITAL CI</span></a><button id="logout" class="btn">Déconnexion</button></header>
-<main class="admin"><section id="login" class="panel small"><h1>Administration</h1><input id="email" placeholder="Email"><input id="password" type="password" placeholder="Mot de passe"><button id="loginBtn" class="btn primary full">Se connecter</button><p id="loginMsg"></p></section>
-<section id="app" hidden><div class="stats" id="stats"></div><div class="panel"><h2>Commandes</h2><div id="orders"></div></div><div class="panel"><h2>Stock des comptes</h2><form id="stockForm" class="grid"><input id="service" placeholder="Service" required><input id="plan" placeholder="Plan"><input id="identifier" placeholder="Identifiant" required><input id="secret" placeholder="Mot de passe"><select id="status"><option>À tester</option><option>Fonctionnel</option><option>Disponible</option><option>Problème</option><option>Désactivé</option><option>Expiré</option></select><input id="expiry" type="date"><button class="btn primary">Ajouter au stock</button></form><div id="stock"></div></div></section></main>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Administration — Next Digital CI</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="nav">
+  <a href="/" class="brand">NEXT <span>DIGITAL CI</span></a>
+  <button id="logout" class="btn" hidden>Déconnexion</button>
+</header>
+
+<main class="admin">
+  <section id="login" class="panel small">
+    <h1>Administration</h1>
+    <label>Email<input id="email" placeholder="Email"></label>
+    <label>Mot de passe<input id="password" type="password" placeholder="Mot de passe"></label>
+    <button id="loginBtn" class="btn primary full" style="margin-top:18px">Se connecter</button>
+    <div id="loginMsg"></div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="stats" id="stats"></div>
+
+    <div class="panel" style="margin-bottom:18px">
+      <h2 style="font-size:17px;margin-bottom:12px">Ventes par service</h2>
+      <div id="bars" class="bars"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-head">
+        <h2>Commandes</h2>
+        <a class="btn" href="/api/admin/orders/export">⭳ Exporter en CSV</a>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="table" id="ordersTable">
+          <thead><tr><th>Réf.</th><th>Client</th><th>Offre</th><th>Montant</th><th>Statut</th><th>Actions</th></tr></thead>
+          <tbody id="orders"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 style="font-size:17px;margin-bottom:14px">Stock des comptes</h2>
+      <form id="stockForm" class="grid">
+        <input id="service" placeholder="Service" required>
+        <input id="plan" placeholder="Plan">
+        <input id="identifier" placeholder="Identifiant" required>
+        <input id="secret" placeholder="Mot de passe">
+        <select id="status"><option>À tester</option><option>Fonctionnel</option><option>Disponible</option><option>Problème</option><option>Désactivé</option><option>Expiré</option></select>
+        <input id="expiry" type="date">
+        <button class="btn primary">Ajouter au stock</button>
+      </form>
+      <div style="overflow-x:auto">
+        <table class="table" id="stockTable">
+          <thead><tr><th>#</th><th>Service</th><th>Identifiant</th><th>Statut</th><th>Expiration</th></tr></thead>
+          <tbody id="stock"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
 <script>
 const $=s=>document.querySelector(s);
-async function api(url,opt){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(r.status===401)throw new Error('AUTH');if(!r.ok)throw new Error(d.error||'Erreur');return d}
-async function load(){try{await api('/api/admin/me');$('#login').hidden=true;$('#app').hidden=false;const [st,orders,stock]=await Promise.all([api('/api/admin/stats'),api('/api/admin/orders'),api('/api/admin/accounts')]);$('#stats').innerHTML=`<div>Commandes<br><b>${st.orders}</b></div><div>En attente<br><b>${st.pending}</b></div><div>CA encaissé<br><b>${Number(st.revenue).toLocaleString('fr-FR')} F</b></div><div>Stock disponible<br><b>${st.available}</b></div>`;$('#orders').innerHTML=orders.length?orders.map(o=>`<div class="row"><b>${o.ref}</b><span>${o.customer_name}<br>${o.product} — ${Number(o.amount).toLocaleString('fr-FR')} F</span><span>${o.payment_status}<br>${o.status}</span><span>${o.account_identifier||'—'}</span></div>`).join(''):'Aucune commande';$('#stock').innerHTML=stock.length?stock.map(a=>`<div class="row"><b>#${a.id}</b><span>${a.service} — ${a.plan||''}<br>${a.identifier}</span><span>${a.status}</span><span>${a.expiry_date||'—'}</span></div>`).join(''):'Stock vide'}catch(e){if(e.message!=='AUTH')console.error(e)}}
-$('#loginBtn').onclick=async()=>{try{await api('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('#email').value,password:$('#password').value})});load()}catch(e){$('#loginMsg').textContent=e.message}};
+const money=n=>Number(n).toLocaleString('fr-FR')+' F';
+async function api(url,opt){
+  const r=await fetch(url,opt);
+  const d=await r.json().catch(()=>({}));
+  if(r.status===401)throw new Error('AUTH');
+  if(!r.ok)throw new Error(d.error||'Erreur');
+  return d;
+}
+function tag(text,cls){return `<span class="tag ${cls}">${text}</span>`}
+function paymentTag(s){
+  if(s==='Payé')return tag('Payé','paid');
+  if(s==='Refusé')return tag('Refusé','cancel');
+  return tag('En attente','wait');
+}
+function statusTag(s){
+  if(s==='Livrée')return tag('Livrée','done');
+  if(s==='Annulée')return tag('Annulée','cancel');
+  if(s==='Payé — À livrer')return tag('À livrer','wait');
+  return tag('En attente','wait');
+}
+
+async function confirmPayment(ref,action){
+  await api(`/api/admin/orders/${encodeURIComponent(ref)}/payment`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+  load();
+}
+async function assignAccount(ref){
+  const available=await api('/api/admin/available-accounts');
+  if(!available.length){alert('Aucun compte disponible en stock pour le moment.');return}
+  const list=available.map((a,i)=>`${i+1}. ${a.service} — ${a.plan||''} (${a.identifier})`).join('\n');
+  const pick=prompt('Choisissez un compte à attribuer (numéro) :\n'+list);
+  const idx=parseInt(pick,10)-1;
+  if(!available[idx])return;
+  await api(`/api/admin/orders/${encodeURIComponent(ref)}/assign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:available[idx].id})});
+  load();
+}
+async function deliveryMessage(ref){
+  const d=await api(`/api/admin/orders/${encodeURIComponent(ref)}/delivery`);
+  window.open(d.whatsapp,'_blank');
+}
+async function markDelivered(ref){
+  await api(`/api/admin/orders/${encodeURIComponent(ref)}/delivered`,{method:'POST'});
+  load();
+}
+window.confirmPayment=confirmPayment; window.assignAccount=assignAccount;
+window.deliveryMessage=deliveryMessage; window.markDelivered=markDelivered;
+
+function orderActions(o){
+  const btns=[];
+  if(o.payment_status==='En attente'){
+    btns.push(`<button class="btn" onclick="confirmPayment('${o.ref}','confirm')">Confirmer paiement</button>`);
+    btns.push(`<button class="btn" onclick="confirmPayment('${o.ref}','reject')">Refuser</button>`);
+  }else if(o.payment_status==='Payé' && !o.account_identifier && o.status!=='Livrée'){
+    btns.push(`<button class="btn" onclick="assignAccount('${o.ref}')">Attribuer un compte</button>`);
+  }else if(o.account_identifier && o.status!=='Livrée'){
+    btns.push(`<button class="btn" onclick="deliveryMessage('${o.ref}')">Message WhatsApp</button>`);
+    btns.push(`<button class="btn" onclick="markDelivered('${o.ref}')">Marquer livrée</button>`);
+  }
+  return `<div class="row-actions">${btns.join('')||'—'}</div>`;
+}
+
+async function load(){
+  try{
+    await api('/api/admin/me');
+    $('#login').hidden=true; $('#app').hidden=false; $('#logout').hidden=false;
+    const [st,orders,stock]=await Promise.all([api('/api/admin/stats'),api('/api/admin/orders'),api('/api/admin/accounts')]);
+
+    $('#stats').innerHTML=`
+      <div>Commandes<b>${st.orders}</b></div>
+      <div>En attente<b>${st.pending}</b></div>
+      <div>Livrées<b>${st.delivered}</b></div>
+      <div>CA encaissé<b>${money(st.revenue)}</b></div>
+      <div>Stock dispo.<b>${st.available}</b></div>`;
+
+    const maxRev=Math.max(1,...st.byService.map(s=>s.s));
+    $('#bars').innerHTML = st.byService.length ? st.byService.map(s=>`
+      <div class="bar-row">
+        <span>${s.product}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${(s.s/maxRev*100).toFixed(0)}%"></div></div>
+        <span>${money(s.s)}</span>
+      </div>`).join('') : '<span class="muted">Pas encore de vente confirmée.</span>';
+
+    $('#orders').innerHTML = orders.length ? orders.map(o=>`
+      <tr>
+        <td><b>${o.ref}</b><br><span class="muted">${new Date(o.created_at).toLocaleDateString('fr-FR')}</span></td>
+        <td>${o.customer_name}<br><span class="muted">${o.customer_phone}</span></td>
+        <td>${o.product}<br><span class="muted">${o.plan||''}</span></td>
+        <td>${money(o.amount)}</td>
+        <td>${paymentTag(o.payment_status)}<br>${statusTag(o.status)}</td>
+        <td>${orderActions(o)}</td>
+      </tr>`).join('') : '<tr><td colspan="6" class="muted">Aucune commande</td></tr>';
+
+    $('#stock').innerHTML = stock.length ? stock.map(a=>`
+      <tr><td>#${a.id}</td><td>${a.service}<br><span class="muted">${a.plan||''}</span></td><td>${a.identifier}</td><td>${a.status}</td><td>${a.expiry_date||'—'}</td></tr>
+    `).join('') : '<tr><td colspan="5" class="muted">Stock vide</td></tr>';
+  }catch(e){ if(e.message!=='AUTH') console.error(e); }
+}
+
+$('#loginBtn').onclick=async()=>{
+  try{
+    await api('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('#email').value,password:$('#password').value})});
+    load();
+  }catch(e){$('#loginMsg').textContent=e.message}
+};
 $('#logout').onclick=async()=>{await fetch('/api/admin/logout',{method:'POST'});location.reload()};
-$('#stockForm').onsubmit=async e=>{e.preventDefault();await api('/api/admin/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:$('#service').value,plan:$('#plan').value,identifier:$('#identifier').value,secret:$('#secret').value,status:$('#status').value,expiry_date:$('#expiry').value||null})});e.target.reset();load()};
+$('#stockForm').onsubmit=async e=>{
+  e.preventDefault();
+  await api('/api/admin/accounts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    service:$('#service').value,plan:$('#plan').value,identifier:$('#identifier').value,
+    secret:$('#secret').value,status:$('#status').value,expiry_date:$('#expiry').value||null
+  })});
+  e.target.reset(); load();
+};
 load();
-</script></body></html>
+</script>
+</body></html>
