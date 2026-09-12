@@ -146,3 +146,5 @@ input:focus,select:focus{border-color:var(--amber)}
   .nav{padding:16px 5%}
   .hero{padding-top:48px}
 }
+.svc-icon{width:20px;height:20px;vertical-align:-4px;margin-right:8px}
+.svc-fallback{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:var(--amber);color:#191008;font-weight:700;font-size:11px;margin-right:8px;vertical-align:-4px}
