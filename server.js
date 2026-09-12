@@ -326,12 +326,25 @@ app.post("/api/admin/orders/:ref/delivered", adminAuth, (req,res) => {
   res.json({ok:true});
 });
 
+app.get("/api/admin/orders/export", adminAuth, (req,res) => {
+  const rows = db.prepare(`SELECT ref,customer_name,customer_phone,customer_email,product,plan,amount,status,payment_status,created_at FROM orders ORDER BY id DESC`).all();
+  const header = "Référence,Nom,Téléphone,Email,Produit,Offre,Montant,Statut,Paiement,Date\n";
+  const csvBody = rows.map(r => [r.ref,r.customer_name,r.customer_phone,r.customer_email||"",r.product,r.plan||"",r.amount,r.status,r.payment_status,r.created_at]
+    .map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  res.setHeader("Content-Type","text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition","attachment; filename=commandes.csv");
+  res.send("\uFEFF" + header + csvBody);
+});
+
 app.get("/api/admin/stats", adminAuth, (req,res) => {
   const orders=db.prepare("SELECT COUNT(*) c FROM orders").get().c;
   const pending=db.prepare("SELECT COUNT(*) c FROM orders WHERE status='En attente'").get().c;
+  const delivered=db.prepare("SELECT COUNT(*) c FROM orders WHERE status='Livrée'").get().c;
   const revenue=db.prepare("SELECT COALESCE(SUM(amount),0) s FROM orders WHERE payment_status='Payé'").get().s;
   const available=db.prepare("SELECT COUNT(*) c FROM accounts WHERE status='Disponible' AND assigned_order_ref IS NULL").get().c;
-  res.json({orders,pending,revenue,available});
+  const byService=db.prepare(`SELECT product, COUNT(*) c, COALESCE(SUM(amount),0) s FROM orders WHERE payment_status='Payé' GROUP BY product ORDER BY s DESC LIMIT 8`).all();
+  const byMonth=db.prepare(`SELECT substr(created_at,1,7) month, COALESCE(SUM(amount),0) s, COUNT(*) c FROM orders WHERE payment_status='Payé' GROUP BY month ORDER BY month DESC LIMIT 6`).all();
+  res.json({orders,pending,delivered,revenue,available,byService,byMonth});
 });
 
 // IMPORTANT: static is mounted AFTER API routes and explicitly serves index.html.

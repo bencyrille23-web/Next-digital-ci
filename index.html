@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Next Digital CI — Le digital, simplement.</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="nav">
+  <a href="/" class="brand">NEXT <span>DIGITAL CI</span></a>
+  <a href="/order.html" class="btn primary">Commander</a>
+</header>
+
+<main class="hero">
+  <div class="eyebrow">Abidjan · Livraison sous 24h · Paiement à la confirmation</div>
+  <h1>Vos abonnements numériques, <em>livrés simplement.</em></h1>
+  <p>Netflix, Prime Video, ChatGPT, Microsoft 365 et une dizaine d'autres services — au juste prix, avec un suivi de commande clair du début à la livraison.</p>
+  <div class="actions">
+    <a class="btn primary" href="#catalogue">Voir le catalogue</a>
+    <a class="btn ghost" href="https://wa.me/" id="waLink">Nous écrire sur WhatsApp</a>
+  </div>
+</main>
+
+<div class="ticker"><span id="tickerText">Chargement du catalogue…</span></div>
+
+<section id="catalogue" class="section">
+  <div class="section-head">
+    <div>
+      <h2>Catalogue</h2>
+      <p>Choisissez une offre, la suite se fait en moins d'une minute.</p>
+    </div>
+    <input id="search" class="search" placeholder="Rechercher un service…">
+  </div>
+  <div id="filters" class="filters"></div>
+  <div id="catalogue-list"></div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Comment ça marche</h2></div>
+  <div class="cards">
+    <div class="card"><div class="ico">🛒</div><h3>1. Choisissez votre offre</h3><p>Parcourez le catalogue et sélectionnez le service et la durée qui vous conviennent.</p></div>
+    <div class="card"><div class="ico">💬</div><h3>2. Confirmez et payez</h3><p>Vous recevez une référence de commande, notre équipe vérifie le paiement rapidement.</p></div>
+    <div class="card"><div class="ico">🚀</div><h3>3. Recevez vos accès</h3><p>Vos identifiants vous sont livrés directement sur WhatsApp, prêts à l'emploi.</p></div>
+  </div>
+</section>
+
+<footer>Next Digital CI — Le digital, simplement.</footer>
+
+<script>
+const money=n=>new Intl.NumberFormat('fr-FR').format(n)+' F CFA';
+let products=[];
+function groupKey(p){
+  if(/Pack/.test(p.service))return 'Packs';
+  if(['Netflix','Prime Video'].includes(p.service))return 'Streaming';
+  if(['Spotify','Apple Music','Deezer'].includes(p.service))return 'Musique';
+  return 'Productivité';
+}
+function render(){
+  const q=document.querySelector('#search').value.toLowerCase();
+  const active=document.querySelector('.filter.active')?.dataset.g||'Tous';
+  const items=products.filter(p=>(active==='Tous'||groupKey(p)===active)&&(p.service+' '+p.plan).toLowerCase().includes(q));
+  const services=[...new Set(items.map(p=>p.service))];
+  document.querySelector('#catalogue-list').innerHTML = services.length ? services.map(s=>{
+    const rows=items.filter(p=>p.service===s);
+    return `<div class="catalog-group">
+      <div class="catalog-title"><b>${s}</b><span>${rows.length} offre(s)</span></div>
+      <div class="product-grid">${rows.map(p=>`
+        <div class="product">
+          <div class="plan">${p.plan}</div>
+          <div class="price">${money(p.amount)}</div>
+          <a class="small-btn" href="/order.html?productId=${encodeURIComponent(p.id)}">Commander</a>
+        </div>`).join('')}</div>
+    </div>`;
+  }).join('') : '<div class="empty">Aucune offre ne correspond à votre recherche.</div>';
+}
+function renderFilters(){
+  const groups=['Tous','Streaming','Musique','Productivité','Packs'];
+  document.querySelector('#filters').innerHTML=groups.map((g,i)=>`<button class="filter ${i===0?'active':''}" data-g="${g}">${g}</button>`).join('');
+  document.querySelectorAll('.filter').forEach(b=>b.onclick=()=>{document.querySelectorAll('.filter').forEach(x=>x.classList.remove('active'));b.classList.add('active');render();});
+}
+fetch('/api/products').then(r=>r.json()).then(data=>{
+  products=data;
+  document.querySelector('#tickerText').innerHTML=[...new Set(data.map(p=>p.service))].map(s=>`<b>${s}</b>`).join(' &nbsp;·&nbsp; ');
+  renderFilters();
+  render();
+});
+document.querySelector('#search').addEventListener('input',render);
+</script>
+</body></html>
